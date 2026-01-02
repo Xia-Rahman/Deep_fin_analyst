@@ -1,38 +1,32 @@
-import os
+
 import sys
 import time
-import json
-from datetime import datetime
 from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv(".env", override=True)
-
-# DeepAgents and LangChain imports - NOT USED FOR ROUTING EXECUTION directly in this hybrid mode
-# We are manually orchestrating execution based on router decision now.
-
-# Import our modular Financial components
-from research_agent.router import decide_complexity
-from research_agent.clients import call_gemini_deep_think, call_openrouter
-from research_agent.config import *
 from termcolor import colored
 
+# Load ENVs
+load_dotenv(".env", override=True)
+
+# Import New Orchestrator
+from orchestrator import orchestrator_app
+
 def main():
-    print(colored("🚀 Initializing Hierarchical Financial Agent (in deep_research)...", "cyan"))
-    print(colored("   - Level 1-4: OpenRouter (Llama/Mistral/Claude)", "blue"))
-    print(colored("   - Level 5:   Google Gemini (Deep Think)", "green"))
+    print(colored("🚀 Starting ENSEMBLE Financial Agent (Multi-Model + Meta-Judge)", "cyan", attrs=["bold"]))
+    print(colored("   🔍 Background Research: Web Search (Tavily)", "magenta"))
+    print(colored("   🧠 Planner: Llama 3.1 405B (Planning + Meta-Judge)", "green"))
+    print(colored("   🔄 Executors: 3-Model Ensemble (Llama 70B + Qwen 72B + Mixtral 8x22B)", "blue"))
+    print(colored("   ✍️  Writer: Llama 3.1 405B (Final Synthesis)", "green"))
     
-    # Check for CLI arguments or run interactive mode
     if len(sys.argv) > 1:
         queries = [" ".join(sys.argv[1:])]
     else:
-        print("\n💡 Enter a query to route through the hierarchy (or 'q' to quit).")
+        print("\n💡 Enter a complex financial research query.")
         queries = []
 
     while True:
         if not queries:
             try:
-                user_input = input(colored("\n💰 Query: ", "yellow"))
+                user_input = input(colored("\n💰 Query (q to exit): ", "yellow"))
                 if user_input.lower() in ['q', 'exit', 'quit']: break
                 if not user_input.strip(): continue
                 current_query = user_input
@@ -41,37 +35,40 @@ def main():
         else:
             current_query = queries.pop(0)
 
-        print(colored(f"\n🔎 Processing: '{current_query}'", "white", attrs=["bold"]))
+        print(colored(f"\n🔎 STARTING RESEARCH: '{current_query}'", "white", attrs=["bold"]))
         
-        # 1. ROUTE
-        print(colored(f"🤔 ROUTER: Analyzing complexity...", "magenta"))
-        level = decide_complexity(current_query)
-        print(colored(f"🎯 ROUTER DECISION: Level {level}", "magenta", attrs=["bold"]))
-
-        # 2. EXECUTE
-        final_response = ""
         try:
-            if level == 5:
-                print(colored(f"🧠 Routing to Level 5 (Gemini Deep Think)...", "green"))
-                final_response = call_gemini_deep_think(current_query)
-            elif level == 4:
-                print(colored(f"⚡ Routing to Level 4 ({LEVEL_4_MODEL})...", "blue"))
-                final_response = call_openrouter(current_query, LEVEL_4_MODEL)
-            elif level == 3:
-                print(colored(f"⚡ Routing to Level 3 ({LEVEL_3_MODEL})...", "blue"))
-                final_response = call_openrouter(current_query, LEVEL_3_MODEL)
-            elif level == 2:
-                print(colored(f"⚡ Routing to Level 2 ({LEVEL_2_MODEL})...", "blue"))
-                final_response = call_openrouter(current_query, LEVEL_2_MODEL)
-            else: # Level 1
-                print(colored(f"⚡ Routing to Level 1 ({LEVEL_1_MODEL})...", "blue"))
-                final_response = call_openrouter(current_query, LEVEL_1_MODEL)
+            # Prepare Initial State
+            initial_state = {
+                "task": current_query,
+                "companies": [],
+                "background_research": "",
+                "plan": [],
+                "current_step_index": 0,
+                "step_results": {},
+                "final_report": ""
+            }
             
-            print(colored("\n✅ Response:", "green", attrs=["bold"]))
-            print(final_response)
+            # Run Graph
+            final_state = orchestrator_app.invoke(initial_state)
             
+            print(colored("\n✅ FINAL REPORT GENERATED:", "green", attrs=["bold"]))
+            print("-" * 80)
+            print(final_state.get("final_report", "No report generated."))
+            print("-" * 80)
+            
+            # Save to file
+            with open("final_report.md", "w") as f:
+                f.write(f"# Research Report\n\n")
+                f.write(f"**Query**: {current_query}\n\n")
+                f.write(f"## Background Research\n\n{final_state.get('background_research', 'N/A')}\n\n")
+                f.write(f"## Final Analysis\n\n{final_state.get('final_report', '')}\n")
+            print(colored(f"\n📄 Saved to 'final_report.md'", "cyan"))
+
         except Exception as e:
-            print(colored(f"\n❌ Error: {str(e)}", "red"))
+            print(colored(f"\n❌ Error during execution: {e}", "red"))
+            import traceback
+            traceback.print_exc()
 
         if len(sys.argv) > 1:
             break

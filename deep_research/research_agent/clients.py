@@ -1,9 +1,11 @@
 import os
 import json
 import requests
+import subprocess
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import sys 
 
 from research_agent.config import MODEL_LIMITS, LEVEL_5_MODEL
 from research_agent.rate_limiter import GLOBAL_RATE_LIMITER
@@ -117,3 +119,79 @@ def call_openrouter(prompt: str, model_id: str):
             return f"OpenRouter Error {response.status_code}: {response.text}"
     except Exception as e:
         return f"OpenRouter Connection Error: {str(e)}"
+
+from research_agent.rate_limiter import GLOBAL_RATE_LIMITER
+
+load_dotenv(override=True)
+
+# --- GEMINI CLI WRAPPER ---
+def ask_gemini_cli(prompt: str) -> str:
+    """
+    Sends a prompt to the Gemini CLI.
+    Tries 'gemini' command first, falls back to local 'gemini_cli.py'.
+    """
+    GLOBAL_RATE_LIMITER.wait_for_slot("gemini", 15)
+    
+    print("🤖 INVOKING GEMINI CLI...")
+    
+    # 1. Try Global Command
+    try:
+        result = subprocess.run(
+            ["gemini", "-p", prompt],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        # 2. Fallback: Try local script in project root
+        try:
+            # Find the script relative to this file
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            script_path = os.path.join(base_dir, "gemini_cli.py")
+            
+            if os.path.exists(script_path):
+                # Run with current python executable
+                result = subprocess.run(
+                    [sys.executable, script_path, "-p", prompt],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                return result.stdout.strip()
+            else:
+                return "Error: Could not find gemini command or gemini_cli.py"
+                
+        except Exception as e:
+            return f"Gemini CLI Fallback Error: {str(e)}"
+    except Exception as e:
+        return f"Gemini CLI Error: {str(e)}"
+
+# Alias for backward compatibility with orchestrator
+call_gemini = ask_gemini_cli
+
+# --- OTHER CLIENTS (Preserved for compatibility) ---
+# (OpenRouter and other client functions remain unchanged)
+def call_openrouter(prompt: str, model_id: str):
+    # ... existing implementation ...
+    from research_agent.config import MODEL_LIMITS
+    limit = MODEL_LIMITS.get(model_id, 10)
+    GLOBAL_RATE_LIMITER.wait_for_slot(model_id, limit)
+    
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key: return "Error: No API key."
+    
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model_id,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+        )
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+        return f"Error {response.status_code}: {response.text}"
+    except Exception as e:
+        return f"Connection Error: {e}"

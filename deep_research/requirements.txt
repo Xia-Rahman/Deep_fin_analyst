@@ -1,6 +1,26 @@
+# Core Framework
 deepagents
 langchain-google-genai
+langgraph
+langchain-core
+
+# Financial Data
 yfinance
+
+# Search & Tools
 tavily-python
+
+# Environment
 python-dotenv
+
+# Utilities
 markdownify
+termcolor
+
+# UI
+streamlit
+watchdog
+
+# HTTP Client (for OpenRouter)
+httpx
+gradio
